@@ -1,0 +1,12 @@
+name: Eficacia_Equidade
+title: Eficacia_Equidade
+username: tesedesigualdadeeducacional
+account: tesedesigualdadeeducacional
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 10738056
+bundleId: 8017197
+url: https://tesedesigualdadeeducacional.shinyapps.io/Eficacia_Equidade/
+version: 1
+asMultiple: FALSE
+asStatic: FALSE

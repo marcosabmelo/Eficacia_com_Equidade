@@ -1,0 +1,235 @@
+---
+title: "Eficácia com Equidade"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+pacman::p_load(forcats, glue, tidyverse, crosstalk, dplyr, DT, plotly, flexdashboard, shiny, sf, brmap)
+```
+
+```{r data}
+# Carregando base
+df_saebPE <- readRDS("df_saebPE.rds")
+tab_saebPE <- readRDS("tab_saebPE.rds")
+ideb_municipios <- readRDS("ideb_municipios.rds")
+
+# Mapa dos Estados
+df_estados <- readRDS("df_estados.rds")
+
+#----------------------------------------------
+#ICP INSE Matemática
+#----------------------------------------------
+icpinsemat <- tab_saebPE %>% 
+  group_by(escola) %>% 
+  summarise(municipio = first(municipio),
+            ideb = first(ideb),
+            efeito = round(mean(efeito_mat), 2),
+            icp = 100*round(mean(icp_insemat), 4),
+            classe = first(classe_mat))
+
+# Retira outliers gerados por ausência de categorias
+icpinsemat <- icpinsemat %>% filter(icp < 90)
+
+# Compartilha com widget
+sd_icpinsemat <- SharedData$new(icpinsemat)
+
+#----------------------------------------------
+#IK INSE Matemática
+#----------------------------------------------
+ikinsemat <- tab_saebPE %>% 
+  group_by(escola) %>% 
+  summarise(municipio = first(municipio),
+            ideb = first(ideb),
+            efeito = round(mean(efeito_mat), 2),
+            ik = 100*round(mean(ik_insemat), 4),
+            classe = first(classe_mat))
+
+# Compartilha com widget
+sd_ikinsemat <- SharedData$new(ikinsemat)
+#----------------------------------------------
+
+# Compartilhando base com os Widgets
+sd <- SharedData$new(df_saebPE)
+sd1 <- SharedData$new(df_estados)
+```
+
+Column {.sidebar data-width=300}
+=======================================================================
+
+```{r}
+filter_select("estado_nome", "Escolha o Estado", sd1, ~estado_nome, multiple = FALSE)
+filter_select("municipio", "Escolha o Município", sd, ~municipio, multiple = FALSE)
+filter_slider("ik", "IK INSE Matemática", sd_ikinsemat, ~ik)
+filter_slider("icp", "ICP INSE Matemática", sd_icpinsemat, ~icp)
+```
+
+
+
+Estados
+=======================================================================
+
+Column
+-----------------------------------------------------------------------
+
+### Ideb dos Estados: Anos Finais 2019
+
+```{r}
+df_estados <- df_estados %>% 
+  mutate(label = glue('{estado_nome} {ideb2019}')) # Texto para o Hover
+
+chart <- ggplot(df_estados) +
+  geom_sf(aes(fill = ideb2019, text = label)) +
+  # mudar escala de cores para sequencial Spectral
+  scale_fill_distiller(type = "seq",
+                       palette = "Spectral",
+                       direction = 1) +
+  # deixar o mapa mais limpo e sem eixos
+    theme(
+      legend.position = "bottom",
+      panel.background = element_blank(),
+      panel.grid.major = element_line(color = "transparent"),
+      axis.text = element_blank(),
+      axis.ticks = element_blank()
+      )
+plotly::ggplotly(chart, tooltip = 'text') %>% style(hoveron = 'fills', traces = seq.int(2, length(chart$x$data))) # Corrigindo o hover)
+
+```
+
+### Efeito Escola - Matemática x Ideb 
+
+```{r}
+plot_ly(data = tab_saebPE, x = ~efeito_mat, y = ~ideb, type = 'scatter', mode = 'markers',
+        text = ~paste('Município:', municipio, '<br>Escola:', escola),
+        colors = c("#1380A1", "#ca0020", "#cccccc"),
+        alpha = 0.7,
+        color = ~classe_mat)
+```
+
+
+Column
+-----------------------------------------------------------------------
+
+### Desempenho Básico e Adequado
+
+```{r}
+aux <- data.frame(100*round(prop.table(table(tab_saebPE$catport)),digits = 2), 
+                   100*round(prop.table(table(tab_saebPE$catmat)),digits = 2))
+categorias <- c("Adequado", "Básico")
+portugues <- aux$Freq
+matematica <- aux$Freq.1
+
+df1 <- data.frame(categorias, portugues, matematica)
+
+df1$categorias <- fct_rev(as.factor(df1$categorias))
+
+df1 %>% pivot_longer(cols=c('portugues', 'matematica'),
+                    names_to='materia',
+                    values_to='percentual') %>%
+  plot_ly(name = ~categorias,
+          x = ~percentual,
+          y = ~materia,
+          type = "bar",
+          color = ~categorias,
+          colors = c("#FDAE61", "#3288BD"),
+          orientation = "h") %>%
+  layout(barmode = "stack",
+         xaxis = list(title = NA,
+                      ticksuffix = "%"),
+         yaxis = list(title = NA))
+
+```
+
+### Efeito Escola - Português x Ideb 
+
+```{r}
+plot_ly(data = tab_saebPE, x = ~efeito_port, y = ~ideb, type = 'scatter', mode = 'markers',
+        text = ~paste('Município:', municipio, '<br>Escola:', escola),
+        colors = c("#1380A1", "#ca0020", "#cccccc"),
+        color = ~classe_mat,
+        alpha = 0.7)
+```
+
+
+Municípios
+=======================================================================
+
+Column
+-----------------------------------------------------------------------
+
+### Ideb dos Municípios: Anos Finais 2019
+
+```{r}
+# Falta implementar reação para mudança de Estado
+# Filtrado para PE cod 26
+df_municipios <- brmap_municipio_simples %>% 
+  filter(estado_cod == 26)
+
+df_municipios <- left_join(df_municipios, ideb_municipios,
+                          by = "municipio_cod", multiple = "first") # Efeito Escola Mat  
+
+df_municipios <- df_municipios %>% 
+  mutate(label = glue('{municipio_nome} {ideb2019}')) # Texto para o Hover
+
+chart1 <- ggplot(df_municipios) +
+  geom_sf(aes(fill = ideb2019, text = label)) +
+  # mudar escala de cores para sequencial Spectral
+  scale_fill_distiller(type = "seq",
+                       palette = "Spectral",
+                       direction = 1) +
+  # deixar o mapa mais limpo e sem eixos
+  theme(
+    legend.position = "bottom",
+    panel.background = element_blank(),
+    panel.grid.major = element_line(color = "transparent"),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  )
+plotly::ggplotly(chart1, tooltip = 'text') %>% style(hoveron = 'fills', traces = seq.int(2, length(chart1$x$data))) # Corrigindo o hover
+
+```
+
+### Efeito Escola em Matemática versus IK INSE Matemática (%)
+
+```{r}
+plot_ly(data = sd_ikinsemat, x = ~efeito, y = ~ik, type = 'scatter', mode = 'markers', color = ~classe,
+        colors = c("#1380A1", "#ca0020", "#cccccc"),
+        alpha = 0.7,
+        text = ~paste('Município:', municipio, '<br>Escola:', escola, '<br>IDEB:', ideb))
+```
+
+Column
+-----------------------------------------------------------------------
+
+### Tabela Efeito Escola no Município
+
+```{r}
+datatable(sd,
+            
+          #start options
+          options = list(
+          order = c(2, "desc"),
+          dom = "ltp",
+          pageLength = 15, 
+          lengthMenu = c(15, 30, 45, 60, 100),
+          columnDefs = list(
+              list(width = '300px', targets = c("municipio", "ideb", "classe_mat"))
+          )),
+          
+          colnames = c("Municipio" = "municipio"),
+          filter = "top",
+          rownames = FALSE)
+
+```
+
+### Efeito Escola em Matemática versus ICP INSE Matemática (%)
+
+```{r}
+plot_ly(data = sd_icpinsemat, x = ~efeito, y = ~icp, type = 'scatter', mode = 'markers', color = ~classe,
+        colors = c("#1380A1", "#ca0020", "#cccccc"),
+        alpha = 0.7,
+        text = ~paste('Município:', municipio, '<br>Escola:', escola, '<br>IDEB:', ideb))
+```
